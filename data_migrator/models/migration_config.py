@@ -316,7 +316,7 @@ class MigrationStack(models.Model):
                                 'migration_id': migration.id,
                                 'model': fo.relation,
                                 'remote_id': getattr(obj, fn).id,
-                                'res_id', '=', getattr(res_id, fn),
+                                'res_id': getattr(res_id, fn),
                                 'state': 'done'
                                 })
             stack.write({'state': 'done', 'res_id': res_id.id, 'blocked': False})
