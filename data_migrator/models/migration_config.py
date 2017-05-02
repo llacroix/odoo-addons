@@ -172,7 +172,8 @@ class MigrationStack(models.Model):
     # @api.one
     # def prepare_vals(self):
 
-
+    
+    
     @api.multi
     def import_record(self):
         def map_existing_record(migration, mig_model, relation, obj):
@@ -261,7 +262,6 @@ class MigrationStack(models.Model):
                     })
             return vals
 
-        
         for stack in self:
             if hasattr(self.env[stack.model], 'import_record'):
                 self.env[stack.model].import_record(stack)
@@ -306,6 +306,19 @@ class MigrationStack(models.Model):
                         f.name: getattr(translated_obj, f.name)
                     })
                 res_id.with_context(lang=lang.code).write(vals_to_translate)
+            if res_id:
+                if self.env[relation]:
+                    for fn, fo in self.env[relation]._inherits.iteritems():
+                        if not self.env['migration.stack'].search([('model', '=', fo.relation),
+                                ('remote_id','=', getattr(obj, fn).id),
+                                ('migration_id', '=', migration.id)]):
+                            self.env['migration.stack'].create({
+                                'migration_id': migration.id,
+                                'model': fo.relation,
+                                'remote_id': getattr(obj, fn).id,
+                                'res_id', '=', getattr(res_id, fn)
+                                'state': 'done'
+                                })
             stack.write({'state': 'done', 'res_id': res_id.id, 'blocked': False})
             # self.env.cr.commit()
             return res_id.id
