@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_migration_config" model="ir.ui.view">
+            <field name="name">Configure Migration</field>
+            <field name="model">migration.config</field>
+            <field name="arch" type="xml">
+                <form string="Configure Migration">
+                    <header>
+                        <button string="Run" type="object" name="execute" class="oe_highlight"/>
+                        <button string="Load Models" type="object" name="load_data" class="oe_highlight"/>
+                        <button string="Clear Models" type="object" name="clear_models"/>
+                        <button string="Manual Migration" type="object" name="run_cron"/>
+                    </header>
+                    <sheet>
+                        <group>
+                            <field name="name"/>
+                            <field name="address"/>
+                            <field name="database"/>
+                            <field name="login"/>
+                            <field name="password"/>
+                            <field name="include_pattern_ids" widget="many2many_tags"/>
+                            <field name="exclude_pattern_ids" widget="many2many_tags"/>
+                            <field name="model_ids">
+                                <form string="Model">
+                                    <group>
+                                        <field name="name"/>
+                                        <field name="remote_name"/>
+                                        <field name="sequence"/>    
+                                    </group>
+                                    <separator string="Field Mapping"/>
+                                    <field name="field_ids">
+                                        <tree editable="bottom">
+                                            <field name="name"/>
+                                            <field name="remote_name"/>
+                                            <field name="ttype"/>
+                                            <field name="remote_ttype"/>
+                                            <field name="ident"/>
+                                        </tree>
+                                    </field>
+                                </form>
+                                <tree>
+                                    <field name="name"/>
+                                    <field name="sequence"/>
+                                </tree>
+                            </field>
+                        </group>
+                        <separator string="Stack"/>
+                        <field name="stack_ids" readonly="1">
+                            <tree>
+                                <field name="model"/>
+                                <field name="res_id"/>
+                                <field name="remote_id"/>
+                                <field name="state"/>
+                            </tree>
+                        </field>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+    <record id="action_migration_config" model="ir.actions.act_window">
+        <field name="name">Configure Migration</field>
+        <field name="type">ir.actions.act_window</field>
+        <field name="res_model">migration.config</field>
+        <field name="view_type">form</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+    <menuitem id="migration_config" name="Migration" parent="base.menu_custom" action="action_migration_config"/>
+</odoo>
