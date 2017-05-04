@@ -36,9 +36,11 @@ class ProductAttributeValue(models.Model):
                         'fi_sorte': obj.fi_sorte and obj.fi_sorte.name,
                         'attribute_id': a.id
                     })
-
+                    name = obj.couleur_finifr
+                    if self.env['product.attribute.value'].with_context(lang='fr_FR').search([('name','=',name)]):
+                        name = '%s %s' % (obj.code_fini, name)
                     value.with_context(lang='fr_FR').write({
-                        'name': obj.couleur_finifr,
+                        'name': name,
                         'description': obj.desc_finifr
                     })
                     stack.write({'state': 'done', 'res_id': value and value.id})

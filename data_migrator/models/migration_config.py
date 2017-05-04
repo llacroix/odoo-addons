@@ -112,6 +112,8 @@ class MigrationConfig(models.Model):
                     if f.name in fields:
                         if fields[f.name].compute:
                             continue
+                        if fields[f.name].type == 'one2many':
+                            continue
                         fields_to_mig.append((0, 0, {
                             'name': f.name,
                             'remote_name': f.name,
