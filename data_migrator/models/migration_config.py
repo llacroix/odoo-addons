@@ -2,8 +2,12 @@
 import odoorpc
 from odoo import api, models, fields
 
-EXCLUDE_FIELDS = ['id', 'create_uid', 'create_date', 'write_uid', 'write_date', '__last_update',]
-STACK_STATE = [('queued', 'Queued'), ('done', 'Done'), ('failed', 'Failed')]
+EXCLUDE_FIELDS = ['id', 'create_uid', 'create_date', 'write_uid', 'write_date', '__last_update']
+STACK_STATE = [
+    ('queued', 'Queued'),
+    ('done', 'Done'),
+    ('failed', 'Failed')
+]
 
 EXCEPTIONS = {'sale_refund': 'sale', 'purchase_refund': 'purchase', 'procent': 'percent', 'product': 'consu',
     'waiting_date':'sale', 'progress':'sale', 'manual':'sale', 'shipping_except':'sale', 'invoice_except':'sale'}
@@ -24,8 +28,6 @@ class MigrationConfig(models.Model):
 
     model_ids = fields.One2many('migration.model', 'migration_id', 'Models')
     stack_ids = fields.One2many('migration.stack', 'migration_id', 'Stack')
-
-    
     
     @property
     @api.one
@@ -39,19 +41,15 @@ class MigrationConfig(models.Model):
     def run_cron(self):
         stack = self.env['migration.stack'].search([
             ('state', '=', 'queued')], order='id desc', limit=1)
-        # stack.write({'blocked': True})
-        # self.env.cr.commit()
         stack.import_record()
-        # stack.write({'blocked': False})
 
     @api.multi
-    def put_to_stack(self, model, res_id):
+    def put_to_stack(self, model, res_id, referenced_to=False, referenced_field=''):
         for migration in self:
             self.env['migration.stack'].create({
-                'migration_id': migration.id,
-                'model': model,
+                'model_id': model.id,
                 'remote_id': res_id,
-                'state': 'queued'
+                'state': 'queued',
             })
 
     @api.multi
@@ -69,10 +67,10 @@ class MigrationConfig(models.Model):
                     if ids:
                         for id in ids:
                             if not stack_pool.search([
-                                    ('model','=',model.name),
+                                    ('model_id','=',model.name),
                                     ('remote_id','=',id),
                                     ('migration_id','=',migration.id)]):
-                                migration.put_to_stack(model.name, id)
+                                migration.put_to_stack(model, id)
                     else:
                         has_results = False
 
@@ -83,8 +81,6 @@ class MigrationConfig(models.Model):
 
     @api.one
     def load_data(self):
-        # self.ensure_one()
-
         domain = []
         for p in self.include_pattern_ids:
             domain.append(('model', 'like', p.name))
@@ -155,170 +151,224 @@ class MigrationField(models.Model):
     ident = fields.Boolean('Identifying field', default=False)
     remote_name = fields.Char('Remote Field')
     remote_ttype = fields.Char('Remote Type')
-    # default_value = fields.Char('Default Value')
+    default_value = fields.Char('Default Value')
+    exceptions = fields.Char('Exceptions')
 
+
+class MigrationStackRef(models.Model):
+    _name = 'migration.stack.ref'
+
+    stack_from = fields.Many2one('migration.stack')
+    stack_to = fields.Many2one('migration.stack')
+    field = fields.Char('Field')
 
 class MigrationStack(models.Model):
     _name = 'migration.stack'
 
-    model = fields.Char('Model')
-    res_id = fields.Integer('ID')
-    migration_id = fields.Many2one('migration.config', 'Migration')
+    model_id = fields.Many2one('migration.model')
+    model = fields.Char('Model', related='model_id.name')
+    remote_model = fields.Char('Remote Model', related='model_id.remote_name')
+    migration_id = fields.Many2one('migration.config', related='model_id.migration_id')
     remote_id = fields.Integer('Remote ID')
+    res_id = fields.Integer('Local ID')
     state = fields.Selection(STACK_STATE, 'State', default='queued')
     blocked = fields.Boolean('Blocked', default=False)
+    ref_ids = fields.One2many('migration.stack.ref', 'stack_from')
+    ref_to_ids = fields.One2many('migration.stack.ref', 'stack_to')
 
-
-    # @api.one
-    # def prepare_vals(self):
-
-    
-    
     @api.multi
-    def import_record(self):
-        def map_existing_record(migration, mig_model, relation, obj):
-            ident_fields = mig_model.field_ids.filtered(lambda x: x.ident)
-            if ident_fields:
-                ident_domain = []
-                for fi in ident_fields:
-                    if fi.ttype in ('many2one', 'many2many'):
-                        fobj = self.env[relation]._fields[fi.name]
-                        if fobj.comodel_name in migration.model_ids.mapped('name'):
-                            rel_stack = self.env['migration.stack'].search([
-                                ('model', '=', fobj.comodel_name),
-                                ('migration_id', '=', migration.id),
-                                ('remote_id', '=', getattr(obj, fi.remote_name))
-                            ])
-                            if rel_stack and rel_stack.res_id:
-                                ident_domain.append((fi.name, '=', rel_stack.res_id))
-                            elif rel_stack and rel_stack.state == 'queued':
-                                rel_stack.import_record()
-                                return False
-                            elif not rel_stack:
-                                migration.put_to_stack(fobj.comodel_name, getattr(obj, fi.remote_name))
-                                return False
-                    else:
-                        ident_domain.append((fi.name, '=', getattr(obj, fi.remote_name)))
-                if 'active' in mig_model.field_ids.mapped('name'):
-                    ident_domain.append('|')
-                    ident_domain.append(('active', '=', True))
-                    ident_domain.append(('active', '=', False))
-                ident_rec = self.env[relation].search(ident_domain)
-                if ident_rec:
-                    return ident_rec
+    def find_record_by_external_id(self):
+        self.ensure_one()
+        stack = self
+        # search in ir.model.data
+        remote_rec = stack.migration_id.connection[0].env[stack.remote_model].browse(stack.remote_id)
+        remote_external_id = stack.migration_id.connection[0].env['ir.model.data'].search([
+            ('res_id', '=', stack.remote_id),
+            ('model', '=', stack.remote_model)])
+        if len(remote_external_id) == 1:
+            remote_external_id = stack.migration_id.connection[0].env['ir.model.data'].browse(remote_external_id[0])
+        else:
             return False
+        if remote_external_id:
+            local_external_id = self.env['ir.model.data'].search([
+                ('model', '=', stack.model),
+                ('name', '=', remote_external_id.name)])
+            if len(local_external_id) == 1:
+                return self.env[stack.model].browse(local_external_id.res_id)
+        return False
 
-        def prepare_vals(migration, mig_model, relation, obj):
-            vals = {}
-            for mig_field in mig_model.field_ids:
-                fobj = self.env[relation]._fields[mig_field.name]
-                try:
-                    val = getattr(obj, mig_field.remote_name)
-                except:
-                    continue
-                if fobj.type in ('boolean', 'float', 'integer', 'char', 'text', 'binary', 'selection') and \
-                        type(val) in (bool, float, int, str, unicode):
-                    val = EXCEPTIONS.get(val, val)
-                    vals.update({mig_field.name: val})
-                elif fobj.type == 'many2one' and fobj.comodel_name in migration.model_ids.mapped('name') and \
-                        val and not (fobj.comodel_name == relation and val.id == obj.id):
-
-                    rel_id = self.env['migration.stack'].search([
-                        ('remote_id', '=', val.id),
-                        ('migration_id', '=', migration.id),
-                        ('model', '=', fobj.comodel_name)
-                    ])
-                    if rel_id:
-                        if rel_id.state == 'done' and rel_id.res_id:
-                            vals.update({
-                                mig_field.name: rel_id.res_id
-                            })
-                        elif rel_id.state == 'queued':
-                            rel_id.import_record()
-                            return False
-                    else:
-                        migration.put_to_stack(fobj.comodel_name, val.id)
-                        return False
-                elif fobj.type == 'many2many' and fobj.comodel_name in migration.model_ids.mapped('name'):
-                    val_to_update = []
-                    for m2m_val in val:
-                        rel_id = self.env['migration.stack'].search([
-                            ('remote_id', '=', val.id),
-                            ('migration_id', '=', migration.id),
-                            ('model', '=', fobj.comodel_name)
+    @api.multi
+    def find_ident_record(self):
+        self.ensure_one()
+        stack = self
+        ident_fields = stack.model_id.field_ids.filtered(lambda x: x.ident)
+        remote_rec = stack.migration_id.connection[0].env[stack.remote_model].browse(stack.remote_id)
+        if ident_fields:
+            ident_domain = []
+            for fi in ident_fields:
+                val = getattr(remote_rec, fi.name)
+                if fi.exceptions:
+                    val = eval(fi.exceptions).get(val, val)
+                if fi.ttype == 'many2one':
+                    fobj = self.env[stack.model]._fields[fi.name]
+                    if fobj.comodel_name in stack.migration_id.model_ids.mapped('name'):
+                        rel_model = self.env['migration.model'].search([
+                            ('migration_id', '=', stack.migration_id.id),
+                            ('name', '=', fobj.comodel_name)])
+                        
+                        rel_stack = self.env['migration.stack'].search([
+                            ('model_id', '=', rel_model.id),
+                            ('remote_id', '=', getattr(remote_rec, fi.remote_name))
                         ])
 
-                        if rel_id:
-                            if rel_id.state == 'done' and rel_id.res_id:
-                                val_to_update.append(rel_id.res_id)
-                            elif rel_id.state == 'queued':
-                                rel_id.import_record()
-                                return False
+                        if rel_stack and rel_stack.res_id:
+                            ident_domain.append((fi.name, '=', rel_stack.res_id))
+                        elif rel_stack and rel_stack.state == 'queued':
+                            ident_domain.append((fi.name, '=', rel_stack.import_record().id))
+                        # elif not rel_stack:
+                        #     migration_model = self.env['migration.model'].search([
+                        #         ('name', '=', fobj.comodel_name),
+                        #         ('migration_id', '=', stack.migration_id.id)
+                        #     ])
+                        #     rel_stack = migration.put_to_stack(migration_model[0], val,
+                        #         stack.id, fi.name)
+                        #     ident_domain.append((fi.name, '=', rel_stack.import_record().id))
                         else:
-                            migration.put_to_stack(fobj.comodel_name, val.id)
                             return False
-                    vals.update({
-                        mig_field.name: val_to_update
-                    })
-            return vals
+                else:
+                    ident_domain.append((fi.name, '=', val))
+            if ident_domain and 'active' in stack.model_id.field_ids.mapped('name'):
+                ident_domain.append('|')
+                ident_domain.append(('active', '=', True))
+                ident_domain.append(('active', '=', False))
+            ident_rec = self.env[stack.model].search(ident_domain)
+            if ident_rec:
+                return ident_rec
+        return False
+
+    @api.multi
+    def prepare_vals(self):
+        self.ensure_one()
+        vals = {}
+        remote_rec = self.migration_id.connection[0].env[self.remote_model].browse(self.remote_id)
+        for field in self.model_id.field_ids:
+            fobj = self.env[self.model]._fields[field.name]
+            val = getattr(remote_rec, field.remote_name)
+            if fobj.type in ('boolean', 'float', 'integer', 'char', 'text', 'binary', 'selection') and \
+                    type(val) in (bool, float, int, str, unicode):
+                if field.exceptions:
+                    val = eval(field.exceptions).get(val, val)
+                vals.update({field.name: val})
+
+            elif fobj.type == 'many2one' and fobj.comodel_name in self.migration_id.model_ids.mapped('name') and \
+                    val and not (fobj.comodel_name == self.model and val.id == remote_rec.id):
+
+                rel_id = self.env['migration.stack'].search([
+                    ('remote_id', '=', val.id),
+                    ('migration_id', '=', self.migration_id.id),
+                    ('model', '=', fobj.comodel_name)
+                ])
+                if rel_id:
+                    if rel_id.state == 'done' and rel_id.res_id:
+                        vals.update({
+                            field.name: rel_id.res_id
+                        })
+                    elif rel_id.state == 'queued':
+                        if fobj.required:
+                            vals.update({field.name: rel_id.import_record().id})
+                        else:
+                            self.env['migration.stack.ref'].create({
+                                'stack_from': self.id,
+                                'stack_to': rel_id.id,
+                                'field': field.name
+                            })
+                            vals.update({
+                                field.name: False
+                            })
+                else:
+                    migration_model = self.env['migration.model'].search([
+                        ('name', '=', fobj.comodel_name),
+                        ('migration_id', '=', self.migration_id.id)
+                    ])
+                    self.migration_id.put_to_stack(migration_model[0], val.id, self.id, field.name)
+                    return False
+            elif fobj.type == 'many2many' and fobj.comodel_name in self.migration_id.model_ids.mapped('name'):
+                val_to_update = []
+                for m2m_val in val:
+                    rel_id = self.env['migration.stack'].search([
+                        ('remote_id', '=', m2m_val.id),
+                        ('migration_id', '=', self.migration_id.id),
+                        ('model', '=', fobj.comodel_name)
+                    ])
+
+                    if rel_id:
+                        if rel_id.state == 'done' and rel_id.res_id:
+                            val_to_update.append(rel_id.res_id)
+                        # else:
+                        #     self.env['migration.stack.ref'].create({
+                        #         'stack_from': self.id,
+                        #         'stack_to': rel_id.id,
+                        #         'field': field.name
+                        #     })
+                vals.update({
+                    field.name: [(6, 0, val_to_update)]
+                })
+        return vals
+
+    @api.one
+    def update_refs(self):
+        for ref in self.ref_to_ids:
+            fobj = self.env[ref.stack_from.model]._fields[ref.field]
+            self.env[ref.stack_from.model].browse(ref.stack_from.res_id).write({
+                ref.field: self.res_id if fobj.type == 'many2one' else [(4, self.res_id)]
+            })
+        self.ref_to_ids.unlink()
+
+
+
+    @api.multi
+    def import_record(self):
+        
 
         for stack in self:
             if hasattr(self.env[stack.model], 'import_record'):
                 self.env[stack.model].import_record(stack)
                 continue
-            # stack.write({'blocked': True})
-            # self.env.cr.commit()
-            
             migration = stack.migration_id
             relation = stack.model
             obj = migration.connection[0].env[relation].browse(stack.remote_id)
 
-            mig_model = self.env['migration.model'].search([
-                ('name','=', relation),
-                ('migration_id', '=', migration.id)
-            ])
-
-            res_id = map_existing_record(migration, mig_model, relation, obj)
             
-            vals = prepare_vals(migration, mig_model, relation, obj)
-            if not vals:
-                # stack.write({ 'blocked': False})
-                # self.env.cr.commit()
-                stack.write({'state': 'done'})
+            res_id = stack.find_record_by_external_id()
+            if not res_id:
+
+                res_id = stack.find_ident_record()
+                res_id = res_id and res_id[0]
+                
+            vals = stack.prepare_vals()
+            if not vals and not res_id:
                 continue
-                    
             if relation == 'product.template':
                 if not res_id:
                     res_id = self.env[relation].with_context(create_product_product=True).create(vals)
-                else:
+                elif vals:
                     res_id.with_context(create_product_product=True).write(vals)
 
             else:
-                if res_id:
-                    res_id.write(vals)
-                else:
+                if not res_id:
                     res_id = self.env[relation].create(vals)
+                    
+                elif vals:
+                    res_id.write(vals)
+            stack.update_refs()
             for lang in self.env['res.lang'].search([('code', '!=', self.env.context['lang'])]):
                 vals_to_translate = {}
                 translated_obj = obj.with_context(lang=lang.code)
-                for f in mig_model.field_ids.filtered(lambda x: x.ttype in ('char', 'text')):
+                for f in stack.model_id.field_ids.filtered(lambda x: x.ttype in ('char', 'text')):
                     vals_to_translate.update({
                         f.name: getattr(translated_obj, f.name)
                     })
-                res_id.with_context(lang=lang.code).write(vals_to_translate)
-            if res_id:
-                if self.env[relation]:
-                    for fn, fo in self.env[relation]._inherits.iteritems():
-                        if not self.env['migration.stack'].search([('model', '=', fo.relation),
-                                ('remote_id','=', getattr(obj, fn).id),
-                                ('migration_id', '=', migration.id)]):
-                            self.env['migration.stack'].create({
-                                'migration_id': migration.id,
-                                'model': fo.relation,
-                                'remote_id': getattr(obj, fn).id,
-                                'res_id': getattr(res_id, fn),
-                                'state': 'done'
-                                })
+                if vals_to_translate:
+                    res_id.with_context(lang=lang.code).write(vals_to_translate)
             stack.write({'state': 'done', 'res_id': res_id.id, 'blocked': False})
-            # self.env.cr.commit()
-            return res_id.id
+            return res_id

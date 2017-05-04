@@ -35,6 +35,7 @@
                                             <field name="ttype"/>
                                             <field name="remote_ttype"/>
                                             <field name="ident"/>
+                                            <field name="exceptions"/>
                                         </tree>
                                     </field>
                                 </form>
