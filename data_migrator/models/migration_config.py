@@ -256,7 +256,7 @@ class MigrationStack(models.Model):
         for field in self.model_id.field_ids:
             fobj = self.env[self.model]._fields[field.name]
             val = getattr(remote_rec, field.remote_name)
-            if fobj.type in ('boolean', 'float', 'integer', 'char', 'text', 'binary', 'selection') and \
+            if fobj.type in ('boolean', 'float', 'integer', 'char', 'text', 'binary', 'selection', 'date', 'datetime') and \
                     type(val) in (bool, float, int, str, unicode):
                 if field.exceptions:
                     val = eval(field.exceptions).get(val, val)

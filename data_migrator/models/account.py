@@ -6,10 +6,8 @@ class AccountChartTemplate(models.Model):
     _inherit = 'account.chart.template'
 
     @api.multi
-    def import_record(self):
-        
-
-        for stack in self:
+    def import_record(self, stacks):
+        for stack in stacks:
             migration = stack.migration_id
             relation = stack.model
             obj = migration.connection[0].env[relation].browse(stack.remote_id)
