@@ -33,7 +33,7 @@ class SaleOrderLine(models.Model):
             local_product_tmpl = self.env['product.template'].browse(local_product_tmpl_st.res_id)
             mapping = {
                 'metal': 'Metal',
-                'bois1': 'Bois 1'
+                'bois1': 'Bois 1',
                 'bois2': 'Bois 2',
                 'patte': 'Patte',
                 'tissu': 'Tissu',
