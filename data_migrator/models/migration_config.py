@@ -143,6 +143,38 @@ class MigrationModels(models.Model):
     sequence = fields.Integer('Sequence')
     migration_id = fields.Many2one('migration.config', 'Migration ID')
     field_ids = fields.One2many('migration.model.fields', 'model_id', 'Fields Mapping')
+    completness = fields.Float(string='Completeness', compute="compute_completeness")
+    imported = fields.Integer(string='Imported', compute="compute_completeness")
+    count = fields.Integer(string='Count', compute="compute_completeness")
+    actual_import = fields.Integer(string='Count', compute="compute_completeness")
+    no_create = fields.Boolean(string='No create')
+
+    def compute_completeness(self):
+        stack_obj = self.env['migration.stack']
+        for obj in self:
+            model_obj = self.env[obj.name]
+
+            obj.imported = imported = stack_obj.search_count([['model_id', '=', obj.id]])
+
+            local_search_domain = []
+            if 'active' in model_obj._fields.keys():
+                local_search_domain.append('|')
+                local_search_domain.append(['active', '=', True])
+                local_search_domain.append(['active', '=', False])
+
+            actual_objs = model_obj.search(local_search_domain)
+            actual_imported = stack_obj.search_count([
+                ['model_id', '=', obj.id],
+                ['res_id', 'in', actual_objs.ids]
+            ])
+
+            obj.actual_import = actual_imported
+            obj.count = actual_count = len(actual_objs)
+
+            obj.completness = (imported * 1.0 / actual_count if actual_count else 0) * 100
+
+            if (obj.actual_import == obj.count):
+                obj.completness = 100
 
 class MigrationField(models.Model):
     _name = 'migration.model.fields'
@@ -155,6 +187,8 @@ class MigrationField(models.Model):
     remote_ttype = fields.Char('Remote Type')
     default_value = fields.Char('Default Value')
     exceptions = fields.Char('Exceptions')
+    create_only = fields.Boolean('Create only')
+    update_only = fields.Boolean('Update only')
 
 
 class MigrationStackRef(models.Model):

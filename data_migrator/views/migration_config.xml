@@ -25,6 +25,8 @@
                                     <group>
                                         <field name="name"/>
                                         <field name="remote_name"/>
+                                        <field name="no_create" />
+                                        <field name="completness" widget="progressbar" />
                                         <field name="sequence"/>    
                                     </group>
                                     <separator string="Field Mapping"/>
@@ -36,11 +38,17 @@
                                             <field name="remote_ttype"/>
                                             <field name="ident"/>
                                             <field name="exceptions"/>
+                                            <field name="create_only"/>
+                                            <field name="update_only"/>
                                         </tree>
                                     </field>
                                 </form>
                                 <tree>
                                     <field name="name"/>
+                                    <field name="completness" widget="progressbar" />
+                                    <field name="imported" />
+                                    <field name="actual_import" />
+                                    <field name="count" />
                                     <field name="sequence"/>
                                 </tree>
                             </field>
