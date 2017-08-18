@@ -25,6 +25,7 @@
                                     <group>
                                         <field name="name"/>
                                         <field name="remote_name"/>
+                                        <field name="extra_domain" />
                                         <field name="no_create" />
                                         <field name="completness" widget="progressbar" />
                                         <field name="sequence"/>    

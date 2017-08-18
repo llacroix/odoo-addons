@@ -148,6 +148,7 @@ class MigrationModels(models.Model):
     count = fields.Integer(string='Count', compute="compute_completeness")
     actual_import = fields.Integer(string='Count', compute="compute_completeness")
     no_create = fields.Boolean(string='No create')
+    extra_domain = fields.Char(string="Domain")
 
     def compute_completeness(self):
         stack_obj = self.env['migration.stack']
